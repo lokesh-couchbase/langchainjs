@@ -6652,9 +6652,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@couchbase/couchbase-darwin-arm64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-darwin-arm64-napi@npm:4.2.11-rc.1"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@couchbase/couchbase-darwin-x64-napi@npm:4.2.10":
   version: 4.2.10
   resolution: "@couchbase/couchbase-darwin-x64-napi@npm:4.2.10"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@couchbase/couchbase-darwin-x64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-darwin-x64-napi@npm:4.2.11-rc.1"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
@@ -6666,9 +6680,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@couchbase/couchbase-linux-arm64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-linux-arm64-napi@npm:4.2.11-rc.1"
+  conditions: os=linux & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@couchbase/couchbase-linux-x64-napi@npm:4.2.10":
   version: 4.2.10
   resolution: "@couchbase/couchbase-linux-x64-napi@npm:4.2.10"
+  conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@couchbase/couchbase-linux-x64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-linux-x64-napi@npm:4.2.11-rc.1"
   conditions: os=linux & cpu=x64
   languageName: node
   linkType: hard
@@ -6680,9 +6708,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@couchbase/couchbase-linuxmusl-x64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-linuxmusl-x64-napi@npm:4.2.11-rc.1"
+  conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
 "@couchbase/couchbase-win32-x64-napi@npm:4.2.10":
   version: 4.2.10
   resolution: "@couchbase/couchbase-win32-x64-napi@npm:4.2.10"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@couchbase/couchbase-win32-x64-napi@npm:4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "@couchbase/couchbase-win32-x64-napi@npm:4.2.11-rc.1"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
@@ -8981,6 +9023,7 @@ __metadata:
     closevector-web: 0.1.6
     cohere-ai: ">=6.0.0"
     convex: ^1.3.1
+    couchbase: ^4.2.11-rc.1
     discord.js: ^14.14.1
     dotenv: ^16.0.3
     dpdm: ^3.12.0
@@ -9086,6 +9129,7 @@ __metadata:
     closevector-web: 0.1.6
     cohere-ai: "*"
     convex: ^1.3.1
+    couchbase: ^4.2.11-rc.1
     discord.js: ^14.14.1
     dria: ^0.0.3
     faiss-node: ^0.5.1
@@ -18485,6 +18529,35 @@ __metadata:
     "@couchbase/couchbase-win32-x64-napi":
       optional: true
   checksum: 1cc4725c5f16c3173691a9e4f702e479df545473deac694f7a8627f58a63a92718824d018730b51a7d4d6a0a8e125b0ef5f3f81cf995a831b8a3adfa05e9ecc7
+  languageName: node
+  linkType: hard
+
+"couchbase@npm:^4.2.11-rc.1":
+  version: 4.2.11-rc.1
+  resolution: "couchbase@npm:4.2.11-rc.1"
+  dependencies:
+    "@couchbase/couchbase-darwin-arm64-napi": 4.2.11-rc.1
+    "@couchbase/couchbase-darwin-x64-napi": 4.2.11-rc.1
+    "@couchbase/couchbase-linux-arm64-napi": 4.2.11-rc.1
+    "@couchbase/couchbase-linux-x64-napi": 4.2.11-rc.1
+    "@couchbase/couchbase-linuxmusl-x64-napi": 4.2.11-rc.1
+    "@couchbase/couchbase-win32-x64-napi": 4.2.11-rc.1
+    cmake-js: ^7.2.1
+    node-addon-api: ^7.0.0
+  dependenciesMeta:
+    "@couchbase/couchbase-darwin-arm64-napi":
+      optional: true
+    "@couchbase/couchbase-darwin-x64-napi":
+      optional: true
+    "@couchbase/couchbase-linux-arm64-napi":
+      optional: true
+    "@couchbase/couchbase-linux-x64-napi":
+      optional: true
+    "@couchbase/couchbase-linuxmusl-x64-napi":
+      optional: true
+    "@couchbase/couchbase-win32-x64-napi":
+      optional: true
+  checksum: ad0bce7bce551e037dc178fac95a071be75a7374828b4c14ca8db6fc45425e50b3118ac0b062b13378dd7906b3c846d02af470ca4ed845cf077ba015174d9cd1
   languageName: node
   linkType: hard
 
