@@ -14,6 +14,7 @@ export const config = {
     /node\:/,
     /js-tiktoken/,
     /@langchain\/core/,
+    /langsmith/,
     /@langchain\/community/,
     "axios", // axios is a dependency of openai
     "convex",
@@ -294,6 +295,7 @@ export const config = {
     "retrievers/self_query/weaviate": "retrievers/self_query/weaviate",
     "retrievers/self_query/vectara": "retrievers/self_query/vectara",
     "retrievers/vespa": "retrievers/vespa",
+    "retrievers/matryoshka_retriever": "retrievers/matryoshka_retriever",
     // cache
     cache: "cache/index",
     "cache/cloudflare_kv": "cache/cloudflare_kv",
