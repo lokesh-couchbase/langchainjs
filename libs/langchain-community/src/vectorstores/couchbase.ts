@@ -5,7 +5,6 @@ import {
   Bucket,
   Cluster,
   Collection,
-  MatchAllSearchQuery,
   Scope,
   SearchRequest,
   VectorQuery,
@@ -171,13 +170,17 @@ export class CouchbaseVectorSearch extends VectorStore {
       fields = [this.textKey, this.metadataKey];
     }
 
+    // const searchRequest = new SearchRequest(
+    //   new MatchAllSearchQuery()
+    // ).withVectorSearch(
+    //   VectorSearch.fromVectorQuery(
+    //     new VectorQuery(this.embeddingKey, embeddings).numCandidates(fetchK)
+    //   )
+    // );
     const searchRequest = new SearchRequest(
-      new MatchAllSearchQuery()
-    ).withVectorSearch(
       VectorSearch.fromVectorQuery(
-        new VectorQuery(this.embeddingKey, embeddings).numCandidates(fetchK)
-      )
-    );
+      new VectorQuery(this.embeddingKey,
+      embeddings).numCandidates(fetchK)));
     console.log(searchRequest, this.indexName);
 
     let searchIterator;
@@ -241,7 +244,7 @@ export class CouchbaseVectorSearch extends VectorStore {
   }
 
   async similaritySearch(
-    query: string,
+    query: string, 
     k = 4,
     filter: CouchbaseVectorStoreFilter = {}
   ): Promise<Document[]> {

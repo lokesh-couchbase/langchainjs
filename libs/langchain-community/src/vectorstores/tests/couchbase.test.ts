@@ -24,10 +24,10 @@ test("Test Couchbase Cluster connection ", async () => {
 
   console.log("connected");
 
-  const embeddings = new OpenAIEmbeddings({openAIApiKey: "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"});
-  const couchbaseVectorStore = new CouchbaseVectorSearch(couchbaseClient,"movies-clone","testing", "1024",embeddings,"movies-clone","overview", "overview-embeddings")
+  const embeddings = new OpenAIEmbeddings({openAIApiKey: "OPEN-AI-API-KEY"})
+  const couchbaseVectorStore = new CouchbaseVectorSearch(couchbaseClient,"movies-clone","testing", "1024",embeddings,"movies-clone","overview", "overview_embedding")
   // const pageContent = faker.lorem.sentence(5);
   // await couchbaseVectorStore.addDocuments([{ pageContent, metadata: { foo: "bar" } }])
-  const docsWithScore = await couchbaseVectorStore.similaritySearch("Star Wars");
+  const docsWithScore = await couchbaseVectorStore.similaritySearch("star wars");
   expect(docsWithScore.length).toBeGreaterThan(0);
 });
