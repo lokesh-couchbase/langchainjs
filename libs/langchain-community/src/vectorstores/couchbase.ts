@@ -31,12 +31,6 @@ export class CouchbaseVectorSearch extends VectorStore {
 
   private readonly _collection: Collection;
 
-  // private readonly connectionString: string;
-
-  // private readonly dbUsername: string;
-
-  // private readonly dbPassword: string;
-
   private readonly bucketName: string;
 
   private readonly scopeName: string;
@@ -55,9 +49,6 @@ export class CouchbaseVectorSearch extends VectorStore {
 
   constructor(
     cluster: Cluster,
-    // connectionString: string,
-    // dbUsername: string,
-    // dbPassword: string,
     bucketName: string,
     scopeName: string,
     collectionName: string,
@@ -69,9 +60,6 @@ export class CouchbaseVectorSearch extends VectorStore {
   ) {
     super(embedding, embedding);
     this.cluster = cluster;
-    // this.connectionString = connectionString;
-    // this.dbUsername = dbUsername;
-    // this.dbPassword = dbPassword;
     this.bucketName = bucketName;
     this.scopeName = scopeName;
     this.collectionName = collectionName;
@@ -165,23 +153,15 @@ export class CouchbaseVectorSearch extends VectorStore {
     kwargs: { [key: string]: any } = {}
   ): Promise<[DocumentInterface<Record<string, any>>, number][]> {
     let { fields } = kwargs;
-
-    if (fields === null) {
+    if (!fields) {
       fields = [this.textKey, this.metadataKey];
     }
 
-    // const searchRequest = new SearchRequest(
-    //   new MatchAllSearchQuery()
-    // ).withVectorSearch(
-    //   VectorSearch.fromVectorQuery(
-    //     new VectorQuery(this.embeddingKey, embeddings).numCandidates(fetchK)
-    //   )
-    // );
     const searchRequest = new SearchRequest(
       VectorSearch.fromVectorQuery(
-      new VectorQuery(this.embeddingKey,
-      embeddings).numCandidates(fetchK)));
-    console.log(searchRequest, this.indexName);
+        new VectorQuery(this.embeddingKey, embeddings).numCandidates(fetchK)
+      )
+    );
 
     let searchIterator;
     const docsWithScore: [DocumentInterface<Record<string, any>>, number][] =
@@ -204,7 +184,6 @@ export class CouchbaseVectorSearch extends VectorStore {
 
       const searchRows = (await searchIterator).rows;
       for (const row of searchRows) {
-        console.log(`row: ${JSON.stringify(row)}`);
         const text = row.fields[this.textKey];
         delete row.fields[this.textKey];
         const metadataField = row.fields;
@@ -239,21 +218,23 @@ export class CouchbaseVectorSearch extends VectorStore {
     for (const doc of docsWithScore) {
       docs.push(doc[0]);
     }
-    console.log(docs);
     return docs;
   }
 
   async similaritySearch(
-    query: string, 
+    query: string,
     k = 4,
     filter: CouchbaseVectorStoreFilter = {}
   ): Promise<Document[]> {
-    const docsWithScore = await this.similaritySearchWithScore(query,k,filter);
+    const docsWithScore = await this.similaritySearchWithScore(
+      query,
+      k,
+      filter
+    );
     const docs = [];
     for (const doc of docsWithScore) {
       docs.push(doc[0]);
     }
-    console.log(docs);
     return docs;
   }
 
@@ -269,44 +250,6 @@ export class CouchbaseVectorSearch extends VectorStore {
       filter
     );
     return docsWithScore;
-    // const dbHost = this.connectionString
-    //   .split("//")
-    //   .pop()
-    //   ?.split("/")[0]
-    //   .split(":")[0];
-    // console.log(dbHost);
-    // const searchQuery = {
-    //   fields: [this.textKey, "metadata"],
-    //   sort: ["-_score"],
-    //   limit: k,
-    //   query: { match_none: {} },
-    //   knn: [{ k: k * 10, field: this.embeddingKey, vector: embedding }],
-    // };
-  }
-
-  async textTo2DList(text: string): Promise<number[][]> {
-    // TODO: Delete before Creating PR
-    // Split the text into words
-    const words = text.split(" ");
-
-    // Initialize the 2D list
-    const numList: number[][] = [];
-
-    // Iterate over each word
-    for await (const word of words) {
-      const numWord: number[] = [];
-
-      // Iterate over each character in the word
-      for await (const char of word) {
-        // Convert the character to its ASCII value and add it to the list
-        numWord.push(char.charCodeAt(0));
-      }
-
-      // Add the numerical word to the 2D list
-      numList.push(numWord);
-    }
-
-    return numList;
   }
 
   public async addDocuments(

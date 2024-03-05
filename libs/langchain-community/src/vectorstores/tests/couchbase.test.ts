@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 import { expect, test } from "@jest/globals";
 import { Cluster } from "couchbase";
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -5,16 +6,9 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { CouchbaseVectorSearch } from "../couchbase.js";
 
 test("Test Couchbase Cluster connection ", async () => {
-  const connectionString = "couchbase://3.76.104.168";
-  const databaseUsername = "Administrator"; 
-  const databasePassword = "P@ssword1!";
-  // const query = `
-  //   SELECT h.* FROM \`travel-sample\`.inventory.hotel h 
-  //   WHERE h.country = 'United States'
-  //   LIMIT 10
-  // `;
-  // const validPageContentFields = ["country", "name", "description"];
-  // const validMetadataFields = ["id"];
+  const connectionString = process.env.DB_CONN_STR || "localhost";
+  const databaseUsername = process.env.DB_USERNAME; 
+  const databasePassword = process.env.DB_PASSWORD;
 
   const couchbaseClient = await Cluster.connect(connectionString, {
     username: databaseUsername,
@@ -24,10 +18,11 @@ test("Test Couchbase Cluster connection ", async () => {
 
   console.log("connected");
 
-  const embeddings = new OpenAIEmbeddings({openAIApiKey: "OPEN-AI-API-KEY"})
+  const embeddings = new OpenAIEmbeddings({openAIApiKey: process.env.OPENAI_API_KEY}) 
   const couchbaseVectorStore = new CouchbaseVectorSearch(couchbaseClient,"movies-clone","testing", "1024",embeddings,"movies-clone","overview", "overview_embedding")
   // const pageContent = faker.lorem.sentence(5);
   // await couchbaseVectorStore.addDocuments([{ pageContent, metadata: { foo: "bar" } }])
-  const docsWithScore = await couchbaseVectorStore.similaritySearch("star wars");
+  const docsWithScore = await couchbaseVectorStore.similaritySearch("Dinosaurs are being artificially created in a park where");
+  console.log(docsWithScore)
   expect(docsWithScore.length).toBeGreaterThan(0);
 });
