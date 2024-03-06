@@ -1,3 +1,4 @@
+/* eslint-disable no-param-reassign */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Embeddings } from "@langchain/core/embeddings";
 import { VectorStore } from "@langchain/core/vectorstores";
@@ -13,13 +14,21 @@ import {
 import { Document, DocumentInterface } from "@langchain/core/documents";
 import { v4 as uuid } from "uuid";
 
+/**
+ * This interface define the optional fields for adding vector
+ */
 export interface AddVectorOptions {
   ids?: string[];
-  metadata?: string[];
+  metadata?: Record<string, any>[];
 }
 
 type CouchbaseVectorStoreFilter = { [key: string]: any };
 
+/**
+ * Class for interacting with the Couchbase database. It extends the
+ * VectorStore class and provides methods for adding vectors and
+ * documents, and searching for similar vectors
+ */
 export class CouchbaseVectorSearch extends VectorStore {
   declare FilterType: CouchbaseVectorStoreFilter;
 
@@ -47,6 +56,22 @@ export class CouchbaseVectorSearch extends VectorStore {
 
   private readonly metadataKey = "metadata";
 
+  /**
+   * Class for interacting with the Couchbase database.
+   * It extends the VectorStore class and provides methods
+   * for adding vectors and documents, and searching for similar vectors.
+   * This also verifies the index
+   *
+   * @param cluster - The Couchbase cluster that the store will interact with.
+   * @param bucketName - The name of the bucket in the Couchbase cluster.
+   * @param scopeName - The name of the scope within the bucket.
+   * @param collectionName - The name of the collection within the scope.
+   * @param embedding - The embeddings to be used for vector operations.
+   * @param indexName - The name of the index to be used for vector search.
+   * @param textKey - The key to be used for text in the documents. Defaults to "text".
+   * @param embeddingKey - The key to be used for embeddings in the documents. If not provided, defaults to undefined.
+   * @param scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
+   */
   constructor(
     cluster: Cluster,
     bucketName: string,
@@ -79,6 +104,12 @@ export class CouchbaseVectorSearch extends VectorStore {
     void this.verifyIndexes();
   }
 
+  /**
+   * An asynchrononous method to verify the search indexes.
+   * It retrieves all indexes and checks if specified index is present.
+   *
+   * @throws {Error} If the specified index does not exist in the database.
+   */
   async verifyIndexes() {
     if (this.scopedIndex) {
       const allIndexes = await this._scope.searchIndexes().getAllIndexes();
@@ -103,6 +134,17 @@ export class CouchbaseVectorSearch extends VectorStore {
     return "couchbase";
   }
 
+  /**
+   * Add vectors and corresponding documents to a couchbase collection
+   * If the document IDs are passed, the existing documents (if any) will be
+   * overwritten with the new ones.
+   * @param vectors - The vectors to be added to the collection.
+   * @param documents - The corresponding documents to be added to the collection.
+   * @param options - Optional parameters for adding vectors.
+   * This may include the IDs and metadata of the documents to be added. Defaults to an empty object.
+   *
+   * @returns - A promise that resolves to an array of document IDs that were added to the collection.
+   */
   public async addVectors(
     vectors: number[][],
     documents: Document[],
@@ -145,21 +187,40 @@ export class CouchbaseVectorSearch extends VectorStore {
     return docIds;
   }
 
+  /**
+   * Performs a similarity search on the vectors in the Couchbase database and returns the documents and their corresponding scores.
+   *
+   * @param embeddings - Embedding vector to look up documents similar to.
+   * @param k - Number of documents to return. Defaults to 4.
+   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object
+   * @param kwargs - Optional list of fields to include in the
+   * metadata of results. Note that these need to be stored in the index.
+   * If nothing is specified, defaults to document metadata fields.
+   *
+   * @returns - Promise of list of [document, score] that are the most similar to the query vector.
+   *
+   * @throws If the search operation fails.
+   */
   async similaritySearchVectorWithScore(
     embeddings: number[],
     k = 4,
     filter: CouchbaseVectorStoreFilter = {},
-    fetchK = 20,
     kwargs: { [key: string]: any } = {}
   ): Promise<[DocumentInterface<Record<string, any>>, number][]> {
     let { fields } = kwargs;
+
     if (!fields) {
       fields = [this.textKey, this.metadataKey];
     }
 
+    // Document text field needs to be returned from the search
+    if (!fields.include(this.textKey)) {
+      fields.push(this.textKey);
+    }
+
     const searchRequest = new SearchRequest(
       VectorSearch.fromVectorQuery(
-        new VectorQuery(this.embeddingKey, embeddings).numCandidates(fetchK)
+        new VectorQuery(this.embeddingKey, embeddings).numCandidates(k)
       )
     );
 
@@ -200,18 +261,28 @@ export class CouchbaseVectorSearch extends VectorStore {
     return docsWithScore;
   }
 
+  /**
+   * Return documents that are most similar to the vector embedding.
+   *
+   * @param embeddings - Embedding to look up documents similar to.
+   * @param k - The number of similar documents to return. Defaults to 4.
+   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
+   * @param kwargs - Optional list of fields to include in the metadata of results.
+   * Note that these need to be stored in the index.
+   * If nothing is specified, defaults to document text and metadata fields.
+   *
+   * @returns - A promise that resolves to an array of documents that match the similarity search.
+   */
   async similaritySearchByVector(
     embeddings: number[],
     k = 4,
     filter: CouchbaseVectorStoreFilter = {},
-    fetchK = 20,
     kwargs: { [key: string]: any } = {}
   ): Promise<Document[]> {
     const docsWithScore = await this.similaritySearchVectorWithScore(
       embeddings,
       k,
       filter,
-      fetchK,
       kwargs
     );
     const docs = [];
@@ -221,6 +292,15 @@ export class CouchbaseVectorSearch extends VectorStore {
     return docs;
   }
 
+  /**
+   * Return documents that are most similar to the query.
+   *
+   * @param query - Query to look up for similar documents
+   * @param k - The number of similar documents to return. Defaults to 4.
+   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
+   *
+   * @returns - Promise of list of documents that are most similar to the query.
+   */
   async similaritySearch(
     query: string,
     k = 4,
@@ -238,6 +318,15 @@ export class CouchbaseVectorSearch extends VectorStore {
     return docs;
   }
 
+  /**
+   * Return documents that are most similar to the query with their scores.
+   *
+   * @param query - Query to look up for similar documents
+   * @param k - The number of similar documents to return. Defaults to 4.
+   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
+   *
+   * @returns - Promise of list of documents that are most similar to the query.
+   */
   async similaritySearchWithScore(
     query: string,
     k = 4,
@@ -252,11 +341,25 @@ export class CouchbaseVectorSearch extends VectorStore {
     return docsWithScore;
   }
 
+  /**
+   * Run texts through the embeddings and persist in vectorstore.
+   * If the document IDs are passed, the existing documents (if any) will be
+   * overwritten with the new ones.
+   * @param documents - The corresponding documents to be added to the collection.
+   * @param options - Optional parameters for adding documents.
+   * This may include the IDs and metadata of the documents to be added. Defaults to an empty object.
+   *
+   * @returns - A promise that resolves to an array of document IDs that were added to the collection.
+   */
   public async addDocuments(
     documents: Document[],
     options: AddVectorOptions = {}
   ) {
     const texts = documents.map(({ pageContent }) => pageContent);
+    const metadatas = documents.map((doc) => doc.metadata);
+    if (!options.metadata) {
+      options.metadata = metadatas;
+    }
     return this.addVectors(
       await this.embeddings.embedDocuments(texts),
       documents,
