@@ -1,6 +1,6 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Embeddings } from "@langchain/core/embeddings";
+import { EmbeddingsInterface } from "@langchain/core/embeddings";
 import { VectorStore } from "@langchain/core/vectorstores";
 import {
   Bucket,
@@ -22,6 +22,18 @@ export interface AddVectorOptions {
   metadata?: Record<string, any>[];
 }
 
+export interface CouchbaseVectorStoreArgs {
+  cluster: Cluster;
+  bucketName: string;
+  scopeName: string;
+  collectionName: string;
+  indexName: string;
+  textKey: string;
+  embeddingKey: string | undefined;
+  scopedIndex: boolean;
+  addVectorOptions?: AddVectorOptions;
+}
+
 type CouchbaseVectorStoreFilter = { [key: string]: any };
 
 /**
@@ -29,30 +41,30 @@ type CouchbaseVectorStoreFilter = { [key: string]: any };
  * VectorStore class and provides methods for adding vectors and
  * documents, and searching for similar vectors
  */
-export class CouchbaseVectorSearch extends VectorStore {
+export class CouchbaseVectorStore extends VectorStore {
   declare FilterType: CouchbaseVectorStoreFilter;
 
-  private readonly cluster: Cluster;
+  private cluster: Cluster;
 
-  private readonly _bucket: Bucket;
+  private _bucket: Bucket;
 
-  private readonly _scope: Scope;
+  private _scope: Scope;
 
-  private readonly _collection: Collection;
+  private _collection: Collection;
 
-  private readonly bucketName: string;
+  private bucketName: string;
 
-  private readonly scopeName: string;
+  private scopeName: string;
 
-  private readonly collectionName: string;
+  private collectionName: string;
 
-  private readonly indexName: string;
+  private indexName: string;
 
-  private readonly textKey: string;
+  private textKey: string;
 
-  private readonly embeddingKey: string;
+  private embeddingKey: string;
 
-  private readonly scopedIndex: boolean;
+  private scopedIndex: boolean;
 
   private readonly metadataKey = "metadata";
 
@@ -73,35 +85,65 @@ export class CouchbaseVectorSearch extends VectorStore {
    * @param scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
    */
   constructor(
-    cluster: Cluster,
-    bucketName: string,
-    scopeName: string,
-    collectionName: string,
-    embedding: Embeddings,
-    indexName: string,
-    textKey = "text",
-    embeddingKey: string | undefined = undefined,
-    scopedIndex = true
+    embedding: EmbeddingsInterface,
+    config: CouchbaseVectorStoreArgs
   ) {
-    super(embedding, embedding);
-    this.cluster = cluster;
-    this.bucketName = bucketName;
-    this.scopeName = scopeName;
-    this.collectionName = collectionName;
-    this.indexName = indexName;
-    this.textKey = textKey;
+    super(embedding, config);
+  }
+
+  static async initialize(
+    embeddings: EmbeddingsInterface,
+    config: CouchbaseVectorStoreArgs
+  ) {
+    const store = new CouchbaseVectorStore(embeddings, config);
+
+    const {
+      cluster,
+      bucketName,
+      scopeName,
+      collectionName,
+      indexName,
+      textKey,
+      embeddingKey,
+      scopedIndex,
+    } = config;
+
     if (embeddingKey) {
-      this.embeddingKey = embeddingKey;
+      store.embeddingKey = embeddingKey;
     } else {
-      this.embeddingKey = `${textKey}_embedding`;
+      store.embeddingKey = `${textKey}_embedding`;
     }
-    this.scopedIndex = scopedIndex;
 
-    this._bucket = this.cluster.bucket(this.bucketName);
-    this._scope = this._bucket.scope(this.scopeName);
-    this._collection = this._scope.collection(this.collectionName);
+    store.cluster = cluster;
+    store.bucketName = bucketName;
+    store.scopeName = scopeName;
+    store.collectionName = collectionName;
+    store.indexName = indexName;
+    store.textKey = textKey;
+    store.scopedIndex = scopedIndex;
 
-    void this.verifyIndexes();
+    try {
+      store._bucket = store.cluster.bucket(store.bucketName);
+      store._scope = store._bucket.scope(store.scopeName);
+      store._collection = store._scope.collection(store.collectionName);
+    } catch (err) {
+      throw new Error(
+        "Error connecting to couchbase, Please check connection and credentials"
+      );
+    }
+
+    try {
+      if (
+        !(await store.checkBucketExists()) ||
+        !(await store.checkIndexExists()) ||
+        !(await store.checkScopeAndCollectionExists())
+      ) {
+        throw new Error("Error while initializing vector store");
+      }
+    } catch (err) {
+      throw new Error(`Error while initializing vector store: ${err}`);
+    }
+    return store;
   }
 
   /**
@@ -109,8 +151,10 @@ export class CouchbaseVectorSearch extends VectorStore {
    * It retrieves all indexes and checks if specified index is present.
    *
    * @throws {Error} If the specified index does not exist in the database.
+   *
+   * @returns {Promise<boolean>} returns promise true if no error is found
    */
-  async verifyIndexes() {
+  private async checkIndexExists(): Promise<boolean> {
     if (this.scopedIndex) {
       const allIndexes = await this._scope.searchIndexes().getAllIndexes();
       const indexNames = allIndexes.map((index) => index.name);
@@ -128,63 +172,54 @@ export class CouchbaseVectorSearch extends VectorStore {
         );
       }
     }
+    return true;
+  }
+
+  private async checkBucketExists(): Promise<boolean> {
+    const bucketManager = this.cluster.buckets();
+    try {
+      await bucketManager.getBucket(this.bucketName);
+      return true;
+    } catch (error) {
+      throw new Error(
+        `Bucket ${this.bucketName} does not exist. Please create the bucket before searching.`
+      );
+    }
+  }
+
+  private async checkScopeAndCollectionExists(): Promise<boolean> {
+    const scopeCollectionMap: Record<string, any> = {};
+
+    // Get a list of all scopes in the bucket
+    const scopes = await this._bucket.collections().getAllScopes();
+    for (const scope of scopes) {
+      scopeCollectionMap[scope.name] = [];
+
+      // Get a list of all the collections in the scope
+      for (const collection of scope.collections) {
+        scopeCollectionMap[scope.name].push(collection.name);
+      }
+    }
+
+    // Check if the scope exists
+    if (!Object.keys(scopeCollectionMap).includes(this.scopeName)) {
+      throw new Error(
+        `Scope ${this.scopeName} not found in Couchbase bucket ${this.bucketName}`
+      );
+    }
+
+    // Check if the collection exists in the scope
+    if (!scopeCollectionMap[this.scopeName].includes(this.collectionName)) {
+      throw new Error(
+        `Collection ${this.collectionName} not found in scope ${this.scopeName} in Couchbase bucket ${this.bucketName}`
+      );
+    }
+
+    return true;
   }
 
   _vectorstoreType(): string {
     return "couchbase";
-  }
-
-  /**
-   * Add vectors and corresponding documents to a couchbase collection
-   * If the document IDs are passed, the existing documents (if any) will be
-   * overwritten with the new ones.
-   * @param vectors - The vectors to be added to the collection.
-   * @param documents - The corresponding documents to be added to the collection.
-   * @param options - Optional parameters for adding vectors.
-   * This may include the IDs and metadata of the documents to be added. Defaults to an empty object.
-   *
-   * @returns - A promise that resolves to an array of document IDs that were added to the collection.
-   */
-  public async addVectors(
-    vectors: number[][],
-    documents: Document[],
-    options: AddVectorOptions = {}
-  ): Promise<string[]> {
-    // Get document ids. if ids are not available then use UUIDs for each document
-    let ids: string[] | undefined = options ? options.ids : undefined;
-    if (ids === undefined) {
-      ids = Array.from({ length: documents.length }, () => uuid());
-    }
-
-    // Get metadata for each document. if metadata is not available, use empty object for each document
-    let metadata: any = options ? options.metadata : undefined;
-    if (metadata === undefined) {
-      metadata = Array.from({ length: documents.length }, () => ({}));
-    }
-
-    const documentsToInsert = ids.map((id: string, index: number) => ({
-      [id]: {
-        [this.textKey]: documents[index],
-        [this.embeddingKey]: vectors[index],
-        [this.metadataKey]: metadata[index],
-      },
-    }));
-
-    const docIds: string[] = [];
-    for (const document of documentsToInsert) {
-      try {
-        const currentDocumentKey = Object.keys(document)[0];
-        await this._collection.upsert(
-          currentDocumentKey,
-          document[currentDocumentKey]
-        );
-        docIds.push(currentDocumentKey);
-      } catch (e) {
-        console.log("error received while upserting document", e);
-      }
-    }
-
-    return docIds;
   }
 
   /**
@@ -195,7 +230,7 @@ export class CouchbaseVectorSearch extends VectorStore {
    * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object
    * @param kwargs - Optional list of fields to include in the
    * metadata of results. Note that these need to be stored in the index.
-   * If nothing is specified, defaults to document metadata fields.
+   * If nothing is specified, defaults to all the fields stored in the index.
    *
    * @returns - Promise of list of [document, score] that are the most similar to the query vector.
    *
@@ -206,45 +241,47 @@ export class CouchbaseVectorSearch extends VectorStore {
     k = 4,
     filter: CouchbaseVectorStoreFilter = {},
     kwargs: { [key: string]: any } = {}
-  ): Promise<[DocumentInterface<Record<string, any>>, number][]> {
+  ): Promise<[Document, number][]> {
     let { fields } = kwargs;
 
     if (!fields) {
-      fields = [this.textKey, this.metadataKey];
+      fields = ["*"]; 
     }
-
     // Document text field needs to be returned from the search
-    if (!fields.include(this.textKey)) {
+    if (!(fields.length === 1 && fields[0] === "*" ) && !fields.includes(this.textKey)) {
       fields.push(this.textKey);
     }
-
+    console.log("fields",fields)
+    console.log(this.embeddingKey)
     const searchRequest = new SearchRequest(
       VectorSearch.fromVectorQuery(
         new VectorQuery(this.embeddingKey, embeddings).numCandidates(k)
       )
     );
-
+    console.log("here1");
     let searchIterator;
     const docsWithScore: [DocumentInterface<Record<string, any>>, number][] =
       [];
-
+      console.log("here2");
     try {
       if (this.scopedIndex) {
         searchIterator = this._scope.search(this.indexName, searchRequest, {
           limit: k,
-          fields: [this.textKey, "metadata"],
+          fields,
           raw: filter,
         });
       } else {
         searchIterator = this.cluster.search(this.indexName, searchRequest, {
           limit: k,
-          fields: [this.textKey, "metadata"],
+          fields,
           raw: filter,
         });
       }
 
       const searchRows = (await searchIterator).rows;
       for (const row of searchRows) {
+        console.log("row", row);
+
         const text = row.fields[this.textKey];
         delete row.fields[this.textKey];
         const metadataField = row.fields;
@@ -256,6 +293,7 @@ export class CouchbaseVectorSearch extends VectorStore {
         docsWithScore.push([doc, searchScore]);
       }
     } catch (err) {
+      console.log("error received");
       throw new Error(`Search failed with error: ${err}`);
     }
     return docsWithScore;
@@ -306,8 +344,9 @@ export class CouchbaseVectorSearch extends VectorStore {
     k = 4,
     filter: CouchbaseVectorStoreFilter = {}
   ): Promise<Document[]> {
-    const docsWithScore = await this.similaritySearchWithScore(
-      query,
+    const queryEmbeddings = await this.embeddings.embedQuery(query);
+    const docsWithScore = await this.similaritySearchVectorWithScore(
+      queryEmbeddings,
       k,
       filter
     );
@@ -331,7 +370,7 @@ export class CouchbaseVectorSearch extends VectorStore {
     query: string,
     k = 4,
     filter: CouchbaseVectorStoreFilter = {}
-  ): Promise<[DocumentInterface<Record<string, any>>, number][]> {
+  ): Promise<[Document, number][]> {
     const embeddings = await this.embeddings.embedQuery(query);
     const docsWithScore = await this.similaritySearchVectorWithScore(
       embeddings,
@@ -339,6 +378,59 @@ export class CouchbaseVectorSearch extends VectorStore {
       filter
     );
     return docsWithScore;
+  }
+
+  /**
+   * Add vectors and corresponding documents to a couchbase collection
+   * If the document IDs are passed, the existing documents (if any) will be
+   * overwritten with the new ones.
+   * @param vectors - The vectors to be added to the collection.
+   * @param documents - The corresponding documents to be added to the collection.
+   * @param options - Optional parameters for adding vectors.
+   * This may include the IDs and metadata of the documents to be added. Defaults to an empty object.
+   *
+   * @returns - A promise that resolves to an array of document IDs that were added to the collection.
+   */
+  public async addVectors(
+    vectors: number[][],
+    documents: Document[],
+    options: AddVectorOptions = {}
+  ): Promise<string[]> {
+    // Get document ids. if ids are not available then use UUIDs for each document
+    let ids: string[] | undefined = options ? options.ids : undefined;
+    if (ids === undefined) {
+      ids = Array.from({ length: documents.length }, () => uuid());
+    }
+
+    // Get metadata for each document. if metadata is not available, use empty object for each document
+    let metadata: any = options ? options.metadata : undefined;
+    if (metadata === undefined) {
+      metadata = Array.from({ length: documents.length }, () => ({}));
+    }
+
+    const documentsToInsert = ids.map((id: string, index: number) => ({
+      [id]: {
+        [this.textKey]: documents[index].pageContent, 
+        [this.embeddingKey]: vectors[index],
+        [this.metadataKey]: metadata[index],
+      },
+    }));
+
+    const docIds: string[] = [];
+    for (const document of documentsToInsert) {
+      try {
+        const currentDocumentKey = Object.keys(document)[0];
+        await this._collection.upsert(
+          currentDocumentKey,
+          document[currentDocumentKey]
+        );
+        docIds.push(currentDocumentKey);
+      } catch (e) {
+        console.log("error received while upserting document", e);
+      }
+    }
+
+    return docIds;
   }
 
   /**
@@ -365,5 +457,47 @@ export class CouchbaseVectorSearch extends VectorStore {
       documents,
       options
     );
+  }
+
+  static async fromDocuments(
+    documents: Document[],
+    embeddings: EmbeddingsInterface,
+    config: CouchbaseVectorStoreArgs
+  ): Promise<CouchbaseVectorStore> {
+    const store = await this.initialize(embeddings, config);
+    await store.addDocuments(documents, config.addVectorOptions);
+    return store;
+  }
+
+  static async fromTexts(
+    texts: string[],
+    metadatas: any,
+    embeddings: EmbeddingsInterface,
+    config: CouchbaseVectorStoreArgs
+  ): Promise<CouchbaseVectorStore> {
+    const docs = [];
+
+    for (let i = 0; i < texts.length; i += 1) {
+      const metadata = Array.isArray(metadatas) ? metadatas[i] : metadatas;
+      const newDoc = new Document({
+        pageContent: texts[i],
+        metadata,
+      });
+      docs.push(newDoc);
+    }
+    return await this.fromDocuments(docs, embeddings, config);
+  }
+
+  public async delete(ids: string[]): Promise<void> {
+    for (let i = 0; i < ids.length; i += 1) {
+      const removeId = ids[i];
+      try {
+        await this._collection.remove(removeId);
+      } catch (err) {
+        throw new Error(
+          `Error while deleting document - Document Id: ${ids[i]}, Error: ${err}`
+        );
+      }
+    }
   }
 }

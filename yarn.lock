@@ -9285,6 +9285,8 @@ __metadata:
       optional: true
     convex:
       optional: true
+    couchbase:
+      optional: true
     discord.js:
       optional: true
     dria:

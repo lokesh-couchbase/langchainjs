@@ -417,6 +417,9 @@
     "convex": {
       "optional": true
     },
+    "couchbase": {
+      "optional": true
+    },
     "discord.js": {
       "optional": true
     },
@@ -1189,6 +1192,15 @@
       },
       "import": "./vectorstores/convex.js",
       "require": "./vectorstores/convex.cjs"
+    },
+    "./vectorstores/couchbase": {
+      "types": {
+        "import": "./vectorstores/couchbase.d.ts",
+        "require": "./vectorstores/couchbase.d.cts",
+        "default": "./vectorstores/couchbase.d.ts"
+      },
+      "import": "./vectorstores/couchbase.js",
+      "require": "./vectorstores/couchbase.cjs"
     },
     "./vectorstores/elasticsearch": {
       "types": {
@@ -2412,6 +2424,10 @@
     "vectorstores/convex.js",
     "vectorstores/convex.d.ts",
     "vectorstores/convex.d.cts",
+    "vectorstores/couchbase.cjs",
+    "vectorstores/couchbase.js",
+    "vectorstores/couchbase.d.ts",
+    "vectorstores/couchbase.d.cts",
     "vectorstores/elasticsearch.cjs",
     "vectorstores/elasticsearch.js",
     "vectorstores/elasticsearch.d.ts",
