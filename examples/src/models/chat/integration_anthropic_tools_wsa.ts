@@ -1,23 +1,14 @@
+import { z } from "zod";
 import { ChatAnthropicTools } from "@langchain/anthropic/experimental";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 
-const calculatorJsonSchema = {
-  type: "object",
-  properties: {
-    operation: {
-      type: "string",
-      enum: ["add", "subtract", "multiply", "divide"],
-      description: "The type of operation to execute.",
-    },
-    number1: { type: "number", description: "The first number to operate on." },
-    number2: {
-      type: "number",
-      description: "The second number to operate on.",
-    },
-  },
-  required: ["operation", "number1", "number2"],
-  description: "A simple calculator tool",
-};
+const calculatorSchema = z.object({
+  operation: z
+    .enum(["add", "subtract", "multiply", "divide"])
+    .describe("The type of operation to execute"),
+  number1: z.number().describe("The first number to operate on."),
+  number2: z.number().describe("The second number to operate on."),
+});
 
 const model = new ChatAnthropicTools({
   modelName: "claude-3-sonnet-20240229",
@@ -25,10 +16,7 @@ const model = new ChatAnthropicTools({
 });
 
 // Pass the schema and tool name to the withStructuredOutput method
-const modelWithTool = model.withStructuredOutput({
-  schema: calculatorJsonSchema,
-  name: "calculator",
-});
+const modelWithTool = model.withStructuredOutput(calculatorSchema);
 
 const prompt = ChatPromptTemplate.fromMessages([
   [

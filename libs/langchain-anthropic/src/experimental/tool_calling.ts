@@ -15,6 +15,7 @@ import {
   BaseLanguageModelCallOptions,
   BaseLanguageModelInput,
   StructuredOutputMethodParams,
+  StructuredOutputMethodOptions,
   ToolDefinition,
 } from "@langchain/core/language_models/base";
 import {
@@ -23,13 +24,15 @@ import {
   RunnableSequence,
 } from "@langchain/core/runnables";
 import { JsonOutputKeyToolsParser } from "@langchain/core/output_parsers/openai_tools";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import type { BaseLLMOutputParser } from "@langchain/core/output_parsers";
+import { JsonSchema7ObjectType, zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { ChatAnthropic, type AnthropicInput } from "../chat_models.js";
 import {
   DEFAULT_TOOL_SYSTEM_PROMPT,
   ToolInvocation,
   formatAsXMLRepresentation,
+  fixArrayXMLParameters,
 } from "./utils/tool_calling.js";
 
 export interface ChatAnthropicToolsCallOptions
@@ -110,6 +113,7 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
     let promptMessages = messages;
     let forced = false;
     let toolCall: string | undefined;
+    const tools = options.tools === undefined ? [] : [...options.tools];
     if (options.tools !== undefined && options.tools.length > 0) {
       const content = await systemPromptTemplate.format({
         tools: `<tools>\n${options.tools
@@ -178,14 +182,29 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
       const responseMessageWithFunctions = new AIMessage({
         content: "",
         additional_kwargs: {
-          tool_calls: invocations.map((toolInvocation, i) => ({
-            id: i.toString(),
-            type: "function",
-            function: {
-              name: toolInvocation.tool_name,
-              arguments: JSON.stringify(toolInvocation.parameters),
-            },
-          })),
+          tool_calls: invocations.map((toolInvocation, i) => {
+            const calledTool = tools.find(
+              (tool) => tool.function.name === toolCall
+            );
+            if (calledTool === undefined) {
+              throw new Error(
+                `Called tool "${toolCall}" did not match an existing tool.`
+              );
+            }
+            return {
+              id: i.toString(),
+              type: "function",
+              function: {
+                name: toolInvocation.tool_name,
+                arguments: JSON.stringify(
+                  fixArrayXMLParameters(
+                    calledTool.function.parameters as JsonSchema7ObjectType,
+                    toolInvocation.parameters
+                  )
+                ),
+              },
+            };
+          }),
         },
       });
       return {
@@ -202,14 +221,29 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
       const responseMessageWithFunctions = new AIMessage({
         content: chatGenerationContent.split("<function_calls>")[0],
         additional_kwargs: {
-          tool_calls: invocations.map((toolInvocation, i) => ({
-            id: i.toString(),
-            type: "function",
-            function: {
-              name: toolInvocation.tool_name,
-              arguments: JSON.stringify(toolInvocation.parameters),
-            },
-          })),
+          tool_calls: invocations.map((toolInvocation, i) => {
+            const calledTool = tools.find(
+              (tool) => tool.function.name === toolInvocation.tool_name
+            );
+            if (calledTool === undefined) {
+              throw new Error(
+                `Called tool "${toolCall}" did not match an existing tool.`
+              );
+            }
+            return {
+              id: i.toString(),
+              type: "function",
+              function: {
+                name: toolInvocation.tool_name,
+                arguments: JSON.stringify(
+                  fixArrayXMLParameters(
+                    calledTool.function.parameters as JsonSchema7ObjectType,
+                    toolInvocation.parameters
+                  )
+                ),
+              },
+            };
+          }),
         },
       });
       return {
@@ -239,52 +273,65 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
   withStructuredOutput<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     RunOutput extends Record<string, any> = Record<string, any>
-  >({
-    schema,
-    name,
-    method,
-    includeRaw,
-  }: StructuredOutputMethodParams<RunOutput, false>): Runnable<
-    BaseLanguageModelInput,
-    RunOutput
-  >;
+  >(
+    outputSchema:
+      | StructuredOutputMethodParams<RunOutput, false>
+      | z.ZodType<RunOutput>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      | Record<string, any>,
+    config?: StructuredOutputMethodOptions<false>
+  ): Runnable<BaseLanguageModelInput, RunOutput>;
 
   withStructuredOutput<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     RunOutput extends Record<string, any> = Record<string, any>
-  >({
-    schema,
-    name,
-    method,
-    includeRaw,
-  }: StructuredOutputMethodParams<RunOutput, true>): Runnable<
-    BaseLanguageModelInput,
-    { raw: BaseMessage; parsed: RunOutput }
-  >;
+  >(
+    outputSchema:
+      | StructuredOutputMethodParams<RunOutput, true>
+      | z.ZodType<RunOutput>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      | Record<string, any>,
+    config?: StructuredOutputMethodOptions<true>
+  ): Runnable<BaseLanguageModelInput, { raw: BaseMessage; parsed: RunOutput }>;
 
   withStructuredOutput<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     RunOutput extends Record<string, any> = Record<string, any>
-  >({
-    schema,
-    name,
-    method,
-    includeRaw,
-  }: StructuredOutputMethodParams<RunOutput, boolean>):
+  >(
+    outputSchema:
+      | StructuredOutputMethodParams<RunOutput, boolean>
+      | z.ZodType<RunOutput>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      | Record<string, any>,
+    config?: StructuredOutputMethodOptions<boolean>
+  ):
     | Runnable<BaseLanguageModelInput, RunOutput>
     | Runnable<
         BaseLanguageModelInput,
         { raw: BaseMessage; parsed: RunOutput }
       > {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let schema: z.ZodType<RunOutput> | Record<string, any>;
+    let name;
+    let method;
+    let includeRaw;
+    if (isStructuredOutputMethodParams(outputSchema)) {
+      schema = outputSchema.schema;
+      name = outputSchema.name;
+      method = outputSchema.method;
+      includeRaw = outputSchema.includeRaw;
+    } else {
+      schema = outputSchema;
+      name = config?.name;
+      method = config?.method;
+      includeRaw = config?.includeRaw;
+    }
     if (method === "jsonMode") {
       throw new Error(`Anthropic only supports "functionCalling" as a method.`);
     }
 
     const functionName = name ?? "extract";
-    const outputParser = new JsonOutputKeyToolsParser<RunOutput>({
-      returnSingle: true,
-      keyName: functionName,
-    });
+    let outputParser: BaseLLMOutputParser<RunOutput>;
     let tools: ToolDefinition[];
     if (isZodSchema(schema)) {
       const jsonSchema = zodToJsonSchema(schema);
@@ -298,6 +345,11 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
           },
         },
       ];
+      outputParser = new JsonOutputKeyToolsParser({
+        returnSingle: true,
+        keyName: functionName,
+        zodSchema: schema,
+      });
     } else {
       tools = [
         {
@@ -309,6 +361,10 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
           },
         },
       ];
+      outputParser = new JsonOutputKeyToolsParser<RunOutput>({
+        returnSingle: true,
+        keyName: functionName,
+      });
     }
     const llm = this.bind({
       tools,
@@ -351,11 +407,24 @@ export class ChatAnthropicTools extends BaseChatModel<ChatAnthropicToolsCallOpti
 }
 
 function isZodSchema<
-  // prettier-ignore
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  RunOutput extends Record<string, any>
+  RunOutput extends Record<string, any> = Record<string, any>
+>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
->(input: any): input is z.ZodType<RunOutput, z.ZodTypeDef, RunOutput> {
+  input: z.ZodType<RunOutput> | Record<string, any>
+): input is z.ZodType<RunOutput> {
   // Check for a characteristic method of Zod schemas
-  return typeof input?.parse === "function";
+  return typeof (input as z.ZodType<RunOutput>)?.parse === "function";
+}
+
+function isStructuredOutputMethodParams(
+  x: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): x is StructuredOutputMethodParams<Record<string, any>> {
+  return (
+    x !== undefined &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof (x as StructuredOutputMethodParams<Record<string, any>>).schema ===
+      "object"
+  );
 }
