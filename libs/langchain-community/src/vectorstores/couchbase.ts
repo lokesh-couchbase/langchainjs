@@ -11,30 +11,45 @@ import {
   VectorQuery,
   VectorSearch,
 } from "couchbase";
-import { Document, DocumentInterface } from "@langchain/core/documents";
+import { Document } from "@langchain/core/documents";
 import { v4 as uuid } from "uuid";
 
 /**
  * This interface define the optional fields for adding vector
+ * - `ids` - vector of ids for each document. If undefined, then uuid will be used
+ * - `metadata` - vector of metadata object for each document
  */
 export interface AddVectorOptions {
   ids?: string[];
   metadata?: Record<string, any>[];
 }
 
+/**
+ * This interface defines the fields required to initialize a vector store
+ */
 export interface CouchbaseVectorStoreArgs {
   cluster: Cluster;
   bucketName: string;
   scopeName: string;
   collectionName: string;
   indexName: string;
-  textKey: string;
-  embeddingKey: string | undefined;
-  scopedIndex: boolean;
+  textKey?: string;
+  embeddingKey?: string;
+  scopedIndex?: boolean;
   addVectorOptions?: AddVectorOptions;
 }
 
-type CouchbaseVectorStoreFilter = { [key: string]: any };
+/**
+ * This type defines the search filters used in couchbase vector search
+ * - `fields`: Optional list of fields to include in the
+ * metadata of results. Note that these need to be stored in the index.
+ * If nothing is specified, defaults to all the fields stored in the index.
+ * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
+ */
+type CouchbaseVectorStoreFilter = {
+  fields?: any,
+  searchOptions?: any
+};
 
 /**
  * Class for interacting with the Couchbase database. It extends the
@@ -43,6 +58,12 @@ type CouchbaseVectorStoreFilter = { [key: string]: any };
  */
 export class CouchbaseVectorStore extends VectorStore {
   declare FilterType: CouchbaseVectorStoreFilter;
+
+  private readonly metadataKey = "metadata";
+
+  private readonly defaultTextKey = "text";
+
+  private readonly defaultScopedIndex = true;
 
   private cluster: Cluster;
 
@@ -60,30 +81,12 @@ export class CouchbaseVectorStore extends VectorStore {
 
   private indexName: string;
 
-  private textKey: string;
+  private textKey = "text";
 
   private embeddingKey: string;
 
   private scopedIndex: boolean;
 
-  private readonly metadataKey = "metadata";
-
-  /**
-   * Class for interacting with the Couchbase database.
-   * It extends the VectorStore class and provides methods
-   * for adding vectors and documents, and searching for similar vectors.
-   * This also verifies the index
-   *
-   * @param cluster - The Couchbase cluster that the store will interact with.
-   * @param bucketName - The name of the bucket in the Couchbase cluster.
-   * @param scopeName - The name of the scope within the bucket.
-   * @param collectionName - The name of the collection within the scope.
-   * @param embedding - The embeddings to be used for vector operations.
-   * @param indexName - The name of the index to be used for vector search.
-   * @param textKey - The key to be used for text in the documents. Defaults to "text".
-   * @param embeddingKey - The key to be used for embeddings in the documents. If not provided, defaults to undefined.
-   * @param scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
-   */
   constructor(
     embedding: EmbeddingsInterface,
     config: CouchbaseVectorStoreArgs
@@ -91,6 +94,21 @@ export class CouchbaseVectorStore extends VectorStore {
     super(embedding, config);
   }
 
+  /**
+   * initialize class for interacting with the Couchbase database.
+   * It extends the VectorStore class and provides methods
+   * for adding vectors and documents, and searching for similar vectors.
+   * This also verifies the params
+   *
+   * @param cluster - The Couchbase cluster that the store will interact with.
+   * @param bucketName - The name of the bucket in the Couchbase cluster.
+   * @param scopeName - The name of the scope within the bucket.
+   * @param collectionName - The name of the collection within the scope.
+   * @param indexName - The name of the index to be used for vector search.
+   * @param textKey - The key to be used for text in the documents. Defaults to "text".
+   * @param embeddingKey - The key to be used for embeddings in the documents. If not provided, defaults to undefined.
+   * @param scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
+   */
   static async initialize(
     embeddings: EmbeddingsInterface,
     config: CouchbaseVectorStoreArgs
@@ -108,19 +126,28 @@ export class CouchbaseVectorStore extends VectorStore {
       scopedIndex,
     } = config;
 
-    if (embeddingKey) {
-      store.embeddingKey = embeddingKey;
-    } else {
-      store.embeddingKey = `${textKey}_embedding`;
-    }
-
     store.cluster = cluster;
     store.bucketName = bucketName;
     store.scopeName = scopeName;
     store.collectionName = collectionName;
     store.indexName = indexName;
-    store.textKey = textKey;
-    store.scopedIndex = scopedIndex;
+    if (textKey) {
+      store.textKey = textKey;
+    } else {
+      store.textKey = store.defaultTextKey;
+    }
+
+    if (embeddingKey) {
+      store.embeddingKey = embeddingKey;
+    } else {
+      store.embeddingKey = `${store.textKey}_embedding`;
+    }
+
+    if (scopedIndex !== undefined) {
+      store.scopedIndex = scopedIndex;
+    } else {
+      store.scopedIndex = store.defaultScopedIndex;
+    }
 
     try {
       store._bucket = store.cluster.bucket(store.bucketName);
@@ -150,9 +177,9 @@ export class CouchbaseVectorStore extends VectorStore {
    * An asynchrononous method to verify the search indexes.
    * It retrieves all indexes and checks if specified index is present.
    *
-   * @throws {Error} If the specified index does not exist in the database.
+   * @throws - If the specified index does not exist in the database.
    *
-   * @returns {Promise<boolean>} returns promise true if no error is found
+   * @returns - returns promise true if no error is found
    */
   private async checkIndexExists(): Promise<boolean> {
     if (this.scopedIndex) {
@@ -175,6 +202,14 @@ export class CouchbaseVectorStore extends VectorStore {
     return true;
   }
 
+  /**
+   * An asynchronous method to verify the existence of a bucket.
+   * It retrieves the bucket using the bucket manager and checks if the specified bucket is present.
+   *
+   * @throws - If the specified bucket does not exist in the database.
+   *
+   * @returns - Returns a promise that resolves to true if no error is found, indicating the bucket exists.
+   */
   private async checkBucketExists(): Promise<boolean> {
     const bucketManager = this.cluster.buckets();
     try {
@@ -187,6 +222,14 @@ export class CouchbaseVectorStore extends VectorStore {
     }
   }
 
+  /**
+   * An asynchronous method to verify the existence of a scope and a collection within that scope.
+   * It retrieves all scopes and collections in the bucket, and checks if the specified scope and collection are present.
+   *
+   * @throws - If the specified scope does not exist in the bucket, or if the specified collection does not exist in the scope.
+   *
+   * @returns - Returns a promise that resolves to true if no error is found, indicating the scope and collection exist.
+   */
   private async checkScopeAndCollectionExists(): Promise<boolean> {
     const scopeCollectionMap: Record<string, any> = {};
 
@@ -225,56 +268,57 @@ export class CouchbaseVectorStore extends VectorStore {
   /**
    * Performs a similarity search on the vectors in the Couchbase database and returns the documents and their corresponding scores.
    *
-   * @param embeddings - Embedding vector to look up documents similar to.
+   * @param queryEmbeddings - Embedding vector to look up documents similar to.
    * @param k - Number of documents to return. Defaults to 4.
-   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object
-   * @param kwargs - Optional list of fields to include in the
+   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object.
+   * - `fields`: Optional list of fields to include in the
    * metadata of results. Note that these need to be stored in the index.
    * If nothing is specified, defaults to all the fields stored in the index.
+   * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
    *
    * @returns - Promise of list of [document, score] that are the most similar to the query vector.
    *
    * @throws If the search operation fails.
    */
   async similaritySearchVectorWithScore(
-    embeddings: number[],
+    queryEmbeddings: number[],
     k = 4,
-    filter: CouchbaseVectorStoreFilter = {},
-    kwargs: { [key: string]: any } = {}
+    filter: CouchbaseVectorStoreFilter = {}
   ): Promise<[Document, number][]> {
-    let { fields } = kwargs;
+    let { fields } = filter;
+    const { searchOptions } = filter;
 
     if (!fields) {
-      fields = ["*"]; 
+      fields = ["*"];
     }
-    // Document text field needs to be returned from the search
-    if (!(fields.length === 1 && fields[0] === "*" ) && !fields.includes(this.textKey)) {
+    if (
+      !(fields.length === 1 && fields[0] === "*") &&
+      !fields.includes(this.textKey)
+    ) {
       fields.push(this.textKey);
     }
-    console.log("fields",fields)
-    console.log(this.embeddingKey)
+
     const searchRequest = new SearchRequest(
       VectorSearch.fromVectorQuery(
-        new VectorQuery(this.embeddingKey, embeddings).numCandidates(k)
+        new VectorQuery(this.embeddingKey, queryEmbeddings).numCandidates(k)
       )
     );
-    console.log("here1");
+    
     let searchIterator;
-    const docsWithScore: [DocumentInterface<Record<string, any>>, number][] =
+    const docsWithScore: [Document, number][] =
       [];
-      console.log("here2");
     try {
       if (this.scopedIndex) {
         searchIterator = this._scope.search(this.indexName, searchRequest, {
           limit: k,
           fields,
-          raw: filter,
+          raw: searchOptions,
         });
       } else {
         searchIterator = this.cluster.search(this.indexName, searchRequest, {
           limit: k,
           fields,
-          raw: filter,
+          raw: searchOptions,
         });
       }
 
@@ -302,26 +346,25 @@ export class CouchbaseVectorStore extends VectorStore {
   /**
    * Return documents that are most similar to the vector embedding.
    *
-   * @param embeddings - Embedding to look up documents similar to.
+   * @param queryEmbeddings - Embedding to look up documents similar to.
    * @param k - The number of similar documents to return. Defaults to 4.
-   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
-   * @param kwargs - Optional list of fields to include in the metadata of results.
-   * Note that these need to be stored in the index.
-   * If nothing is specified, defaults to document text and metadata fields.
+   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object.
+   * - `fields`: Optional list of fields to include in the
+   * metadata of results. Note that these need to be stored in the index.
+   * If nothing is specified, defaults to all the fields stored in the index.
+   * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
    *
    * @returns - A promise that resolves to an array of documents that match the similarity search.
    */
   async similaritySearchByVector(
-    embeddings: number[],
+    queryEmbeddings: number[],
     k = 4,
-    filter: CouchbaseVectorStoreFilter = {},
-    kwargs: { [key: string]: any } = {}
+    filter: CouchbaseVectorStoreFilter = {}
   ): Promise<Document[]> {
     const docsWithScore = await this.similaritySearchVectorWithScore(
-      embeddings,
+      queryEmbeddings,
       k,
-      filter,
-      kwargs
+      filter
     );
     const docs = [];
     for (const doc of docsWithScore) {
@@ -335,7 +378,11 @@ export class CouchbaseVectorStore extends VectorStore {
    *
    * @param query - Query to look up for similar documents
    * @param k - The number of similar documents to return. Defaults to 4.
-   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
+   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object.
+   * - `fields`: Optional list of fields to include in the
+   * metadata of results. Note that these need to be stored in the index.
+   * If nothing is specified, defaults to all the fields stored in the index.
+   * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
    *
    * @returns - Promise of list of documents that are most similar to the query.
    */
@@ -362,7 +409,11 @@ export class CouchbaseVectorStore extends VectorStore {
    *
    * @param query - Query to look up for similar documents
    * @param k - The number of similar documents to return. Defaults to 4.
-   * @param filter - Optional search options that are passed to Couchbase search. Defaults to empty object.
+   * @param filter - Optional search filter that are passed to Couchbase search. Defaults to empty object.
+   * - `fields`: Optional list of fields to include in the
+   * metadata of results. Note that these need to be stored in the index.
+   * If nothing is specified, defaults to all the fields stored in the index.
+   * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
    *
    * @returns - Promise of list of documents that are most similar to the query.
    */
@@ -371,9 +422,9 @@ export class CouchbaseVectorStore extends VectorStore {
     k = 4,
     filter: CouchbaseVectorStoreFilter = {}
   ): Promise<[Document, number][]> {
-    const embeddings = await this.embeddings.embedQuery(query);
+    const queryEmbeddings = await this.embeddings.embedQuery(query);
     const docsWithScore = await this.similaritySearchVectorWithScore(
-      embeddings,
+      queryEmbeddings,
       k,
       filter
     );
@@ -410,7 +461,7 @@ export class CouchbaseVectorStore extends VectorStore {
 
     const documentsToInsert = ids.map((id: string, index: number) => ({
       [id]: {
-        [this.textKey]: documents[index].pageContent, 
+        [this.textKey]: documents[index].pageContent,
         [this.embeddingKey]: vectors[index],
         [this.metadataKey]: metadata[index],
       },
@@ -459,6 +510,15 @@ export class CouchbaseVectorStore extends VectorStore {
     );
   }
 
+  /**
+   * Create a new CouchbaseVectorStore from a set of documents.
+   * This function will initialize a new store, add the documents to it, and then return the store.
+   * @param documents - The documents to be added to the new store.
+   * @param embeddings - The embeddings to be used for the documents.
+   * @param config - The configuration for the new CouchbaseVectorStore. This includes the options for adding vectors.
+   *
+   * @returns - A promise that resolves to the new CouchbaseVectorStore that contains the added documents.
+   */
   static async fromDocuments(
     documents: Document[],
     embeddings: EmbeddingsInterface,
@@ -469,6 +529,18 @@ export class CouchbaseVectorStore extends VectorStore {
     return store;
   }
 
+  /**
+   * Create a new CouchbaseVectorStore from a set of texts.
+   * This function will convert each text and its corresponding metadata into a Document,
+   * initialize a new store, add the documents to it, and then return the store.
+   * @param texts - The texts to be converted into Documents and added to the new store.
+   * @param metadatas - The metadata for each text. If an array is passed, each text will have its corresponding metadata.
+   * If not, all texts will have the same metadata.
+   * @param embeddings - The embeddings to be used for the documents.
+   * @param config - The configuration for the new CouchbaseVectorStore. This includes the options for adding vectors.
+   *
+   * @returns - A promise that resolves to the new CouchbaseVectorStore that contains the added documents.
+   */
   static async fromTexts(
     texts: string[],
     metadatas: any,
@@ -488,6 +560,14 @@ export class CouchbaseVectorStore extends VectorStore {
     return await this.fromDocuments(docs, embeddings, config);
   }
 
+  /**
+   * Delete documents from the collection.
+   * This function will attempt to remove each document in the provided list of IDs from the collection.
+   * If an error occurs during the deletion of a document, an error will be thrown with the ID of the document and the error message.
+   * @param ids - An array of document IDs to be deleted from the collection.
+   *
+   * @returns - A promise that resolves when all documents have been attempted to be deleted. If a document could not be deleted, an error is thrown.
+   */
   public async delete(ids: string[]): Promise<void> {
     for (let i = 0; i < ids.length; i += 1) {
       const removeId = ids[i];

@@ -1,10 +1,9 @@
 /* eslint-disable no-process-env */
-import { expect, test } from "@jest/globals";
+import { test } from "@jest/globals";
 import { Cluster } from "couchbase";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { faker } from "@faker-js/faker";
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { PDFLoader } from "langchain/document_loaders/fs/pdf";
+
 import {
   CouchbaseVectorStore,
   CouchbaseVectorStoreArgs,
@@ -52,11 +51,9 @@ test("Test Couchbase Cluster connection ", async () => {
   
   const pageContent = faker.lorem.sentence(5);
   console.log(pageContent);
-  const pdf = new PDFLoader("pdfFile");
-  const docs = await pdf.load()
-  // await couchbaseVectorStore.addDocuments([{ pageContent, metadata: { foo: "bar" } }])
-  // await CouchbaseVectorStore.fromDocuments(docs,embeddings, couchbaseConfig)
+  // // await couchbaseVectorStore.addDocuments([{ pageContent, metadata: { foo: "bar" } }])
+  // // await CouchbaseVectorStore.fromDocuments(docs,embeddings, couchbaseConfig)
   const docsWithScore = await couchbaseVectorStore.similaritySearchWithScore("titanic is bad for climate",4)
-  // console.log(docsWithScore); 
+  console.log( docsWithScore); 
   // expect(docsWithScore.length).toBeGreaterThan(0);
 });
