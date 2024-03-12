@@ -26,6 +26,16 @@ export interface AddVectorOptions {
 
 /**
  * This interface defines the fields required to initialize a vector store
+ * These are the fields part of config:
+ * @property {Cluster} cluster - The Couchbase cluster that the store will interact with.
+ * @property {string} bucketName - The name of the bucket in the Couchbase cluster.
+ * @property {string} scopeName - The name of the scope within the bucket.
+ * @property {string} collectionName - The name of the collection within the scope.
+ * @property {string} indexName - The name of the index to be used for vector search.
+ * @property {string} textKey - The key to be used for text in the documents. Defaults to "text".
+ * @property {string} embeddingKey - The key to be used for embeddings in the documents. If not provided, defaults to undefined.
+ * @property {boolean} scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
+ * @property {AddVectorOptions} addVectorOptions - Options for adding vectors with specific id/metadata
  */
 export interface CouchbaseVectorStoreArgs {
   cluster: Cluster;
@@ -47,19 +57,20 @@ export interface CouchbaseVectorStoreArgs {
  * - `searchOptions`:  Optional search options that are passed to Couchbase search. Defaults to empty object.
  */
 type CouchbaseVectorStoreFilter = {
-  fields?: any,
-  searchOptions?: any
+  fields?: any;
+  searchOptions?: any;
 };
 
 /**
  * Class for interacting with the Couchbase database. It extends the
  * VectorStore class and provides methods for adding vectors and
- * documents, and searching for similar vectors
+ * documents, and searching for similar vectors.
+ * Initiate the class using initialize() method.
  */
 export class CouchbaseVectorStore extends VectorStore {
   declare FilterType: CouchbaseVectorStoreFilter;
 
-  private readonly metadataKey = "metadata";
+  private metadataKey = "metadata";
 
   private readonly defaultTextKey = "text";
 
@@ -87,7 +98,13 @@ export class CouchbaseVectorStore extends VectorStore {
 
   private scopedIndex: boolean;
 
-  constructor(
+  /**
+   * The private constructor used to provide embedding to parent class.
+   * Initialize the class using static initialize() method
+   * @param embedding - object to generate embedding
+   * @param config -  the fields required to initialize a vector store
+   */
+  private constructor(
     embedding: EmbeddingsInterface,
     config: CouchbaseVectorStoreArgs
   ) {
@@ -100,14 +117,8 @@ export class CouchbaseVectorStore extends VectorStore {
    * for adding vectors and documents, and searching for similar vectors.
    * This also verifies the params
    *
-   * @param cluster - The Couchbase cluster that the store will interact with.
-   * @param bucketName - The name of the bucket in the Couchbase cluster.
-   * @param scopeName - The name of the scope within the bucket.
-   * @param collectionName - The name of the collection within the scope.
-   * @param indexName - The name of the index to be used for vector search.
-   * @param textKey - The key to be used for text in the documents. Defaults to "text".
-   * @param embeddingKey - The key to be used for embeddings in the documents. If not provided, defaults to undefined.
-   * @param scopedIndex - Whether to use a scoped index for vector search. Defaults to true.
+   * @param embeddings - object to generate embedding
+   * @param config - the fields required to initialize a vector store
    */
   static async initialize(
     embeddings: EmbeddingsInterface,
@@ -266,6 +277,22 @@ export class CouchbaseVectorStore extends VectorStore {
   }
 
   /**
+   * Formats couchbase metadata by removing `metadata.` from initials
+   * @param fields - all the fields of row
+   * @returns - formatted metadata fields
+   */
+  private formatMetadata = (fields: any) => {
+    delete fields[this.textKey];
+    const metadataFields: { [key: string]: any } = {};
+    // eslint-disable-next-line guard-for-in
+    for (const key in fields) {
+      const newKey = key.replace(`${this.metadataKey}.`, "");
+      metadataFields[newKey] = fields[key];
+    }
+    return metadataFields;
+  };
+
+  /**
    * Performs a similarity search on the vectors in the Couchbase database and returns the documents and their corresponding scores.
    *
    * @param queryEmbeddings - Embedding vector to look up documents similar to.
@@ -303,10 +330,9 @@ export class CouchbaseVectorStore extends VectorStore {
         new VectorQuery(this.embeddingKey, queryEmbeddings).numCandidates(k)
       )
     );
-    
+
     let searchIterator;
-    const docsWithScore: [Document, number][] =
-      [];
+    const docsWithScore: [Document, number][] = [];
     try {
       if (this.scopedIndex) {
         searchIterator = this._scope.search(this.indexName, searchRequest, {
@@ -324,15 +350,12 @@ export class CouchbaseVectorStore extends VectorStore {
 
       const searchRows = (await searchIterator).rows;
       for (const row of searchRows) {
-        console.log("row", row);
-
         const text = row.fields[this.textKey];
-        delete row.fields[this.textKey];
-        const metadataField = row.fields;
+        const metadataFields = this.formatMetadata(row.fields);
         const searchScore = row.score;
         const doc = new Document({
           pageContent: text,
-          metadata: metadataField,
+          metadata: metadataFields,
         });
         docsWithScore.push([doc, searchScore]);
       }
