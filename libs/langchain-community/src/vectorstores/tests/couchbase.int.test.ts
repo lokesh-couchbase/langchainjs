@@ -125,9 +125,12 @@ describe("Couchbase vector store", () => {
     expect(results[0].metadata.name).toEqual(metadata[1].name);
 
     await store.delete(ids);
-    const cbCollection = couchbaseClient.bucket(bucketName).scope(scopeName).collection(collectionName)
-    expect((await cbCollection.exists(ids[0])).exists).toBe(false)
-    expect((await cbCollection.exists(ids[4])).exists).toBe(false)
+    const cbCollection = couchbaseClient
+      .bucket(bucketName)
+      .scope(scopeName)
+      .collection(collectionName);
+    expect((await cbCollection.exists(ids[0])).exists).toBe(false);
+    expect((await cbCollection.exists(ids[4])).exists).toBe(false);
 
     const resultsDeleted = await store.similaritySearch(texts[1], 1);
     expect(resultsDeleted.length).not.toEqual(1);
