@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 import { describe, test } from "@jest/globals";
 import { Cluster } from "couchbase";
@@ -8,18 +9,19 @@ import {
   CouchbaseVectorStoreArgs,
 } from "../couchbase.js";
 
-describe("Couchbase vector store", () => {
-  const connectionString = process.env.DB_CONN_STR || "localhost";
-  const databaseUsername = process.env.DB_USERNAME;
-  const databasePassword = process.env.DB_PASSWORD;
-  const bucketName = "movies-clone";
-  const scopeName = "test2";
-  const collectionName = "col1";
-  const indexName = "movies-clone-test";
+describe.skip("Couchbase vector store", () => {
+  const connectionString = process.env.DB_CONN_STR ?? "couchbase://localhost";
+  const databaseUsername = process.env.DB_USERNAME ?? "Administrator";
+  const databasePassword = process.env.DB_PASSWORD ?? "Password";
+  const bucketName = process.env.DB_BUCKET_NAME ?? "testing";
+  const scopeName = process.env.DB_SCOPE_NAME ?? "_default";
+  const collectionName = process.env.DB_COLLECTION_NAME ?? "_default";
+  const indexName = process.env.DB_INDEX_NAME ?? "vector-index";
   const textFieldKey = "text";
   const embeddingFieldKey = "embedding";
   const isScopedIndex = true;
   let couchbaseClient: Cluster;
+  let embeddings: OpenAIEmbeddings;
 
   const texts = [
     "Couchbase, built on a key-value store, offers efficient data operations.",
@@ -43,13 +45,13 @@ describe("Couchbase vector store", () => {
       password: databasePassword,
       configProfile: "wanDevelopment",
     });
+
+    embeddings = new OpenAIEmbeddings({
+      openAIApiKey: process.env.OPENAI_API_KEY,
+    });
   });
 
   test("from Texts to vector store", async () => {
-    const embeddings = new OpenAIEmbeddings({
-      openAIApiKey: process.env.OPENAI_API_KEY,
-    });
-
     const couchbaseConfig: CouchbaseVectorStoreArgs = {
       cluster: couchbaseClient,
       bucketName,
@@ -75,11 +77,7 @@ describe("Couchbase vector store", () => {
     expect(results[0][0].metadata.id).toEqual(metadata[0].id);
   });
 
-  test.skip("Add and delete Documents to vector store", async () => {
-    const embeddings = new OpenAIEmbeddings({
-      openAIApiKey: process.env.OPENAI_API_KEY,
-    });
-
+  test("Add and delete Documents to vector store", async () => {
     const couchbaseConfig: CouchbaseVectorStoreArgs = {
       cluster: couchbaseClient,
       bucketName,
@@ -134,5 +132,109 @@ describe("Couchbase vector store", () => {
 
     const resultsDeleted = await store.similaritySearch(texts[1], 1);
     expect(resultsDeleted.length).not.toEqual(1);
+  });
+
+  test("hybrid search", async () => {
+    const couchbaseConfig: CouchbaseVectorStoreArgs = {
+      cluster: couchbaseClient,
+      bucketName,
+      scopeName,
+      collectionName,
+      indexName,
+      textKey: textFieldKey,
+      embeddingKey: embeddingFieldKey,
+      scopedIndex: isScopedIndex,
+    };
+
+    const query = `Couchbase offers impressive memory-first performance for your important applications.`;
+
+    const hybridSearchMetadata: { [key: string]: any }[] = [];
+
+    // Add More Metadata
+    for (let i = 0; i < texts.length; i += 1) {
+      const doc: { [key: string]: any } = {};
+      doc.date = `${2020 + (i % 10)}-01-01`;
+      doc.rating = 1 + (i % 5);
+      doc.author = ["John Doe", "Jane Doe"][(i + 1) % 2];
+      doc.id = (i + 100).toString();
+      hybridSearchMetadata.push(doc);
+    }
+    const store = await CouchbaseVectorStore.fromTexts(
+      texts,
+      hybridSearchMetadata,
+      embeddings,
+      couchbaseConfig
+    );
+
+    const resultsSimilaritySearch = await store.similaritySearch(query, 1);
+    expect(resultsSimilaritySearch.length).toEqual(1);
+    expect(resultsSimilaritySearch[0].metadata.date).not.toEqual(undefined);
+
+    // search by exact value in metadata
+    const exactValueResult = await store.similaritySearch(query, 4, {
+      fields: ["metadata.author"],
+      searchOptions: {
+        query: { field: "metadata.author", match: "John Doe" },
+      },
+    });
+
+    expect(exactValueResult.length).toEqual(4);
+    expect(exactValueResult[0].metadata.author).toEqual("John Doe");
+
+    // search by partial match in metadata
+    const partialMatchResult = await store.similaritySearch(query, 4, {
+      fields: ["metadata.author"],
+      searchOptions: {
+        query: { field: "metadata.author", match: "Johny", fuzziness: 1 },
+      },
+    });
+
+    expect(partialMatchResult.length).toEqual(4);
+    expect(partialMatchResult[0].metadata.author).toEqual("John Doe");
+
+    // search by date range
+    const dateRangeResult = await store.similaritySearch(query, 4, {
+      fields: ["metadata.date", "metadata.author"],
+      searchOptions: {
+        query: {
+          start: "2022-12-31",
+          end: "2023-01-02",
+          inclusiveStart: true,
+          inclusiveEnd: false,
+          field: "metadata.date",
+        },
+      },
+    });
+
+    expect(dateRangeResult.length).toEqual(4);
+
+    // search by rating range
+    const ratingRangeResult = await store.similaritySearch(texts[0], 4, {
+      fields: ["metadata.rating"],
+      searchOptions: {
+        query: {
+          min: 3,
+          max: 5,
+          inclusiveMin: false,
+          inclusiveMax: true,
+          field: "metadata.rating",
+        },
+      },
+    });
+    expect(ratingRangeResult.length).toEqual(4);
+
+    // multiple search conditions
+    const multipleConditionsResult = await store.similaritySearch(texts[0], 4, {
+      fields: ["metadata.rating", "metadata.date"],
+      searchOptions: {
+        query: {
+          conjuncts: [
+            { min: 3, max: 4, inclusive_max: true, field: "metadata.rating" },
+            { start: "2022-12-31", end: "2023-01-02", field: "metadata.date" },
+          ],
+        },
+      },
+    });
+    expect(multipleConditionsResult.length).toEqual(4);
   });
 });
